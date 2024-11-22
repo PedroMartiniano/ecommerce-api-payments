@@ -1,15 +1,30 @@
 package messaging
 
 import (
-	"log"
+	"context"
+	"encoding/json"
 
 	"github.com/PedroMartiniano/ecommerce-api-payments/internal/application/services"
-	"github.com/PedroMartiniano/ecommerce-api-payments/internal/configs"
+	"github.com/PedroMartiniano/ecommerce-api-payments/internal/configs/env"
+	"github.com/PedroMartiniano/ecommerce-api-payments/internal/configs/logger"
+	"github.com/PedroMartiniano/ecommerce-api-payments/internal/domain/dtos"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+var log = logger.NewLogger()
+
 type RabbitMqQueue struct {
 	paymentService *services.PaymentService
+}
+
+type BodyResponse struct {
+	OrderID        string  `json:"order_id"`
+	UserID         string  `json:"user_id"`
+	CardHolder     string  `json:"card_holder"`
+	CardNumber     string  `json:"card_number"`
+	ExpirationDate string  `json:"expiration_date"`
+	CVV            string  `json:"cvv"`
+	Amount         float64 `json:"amount"`
 }
 
 func NewRabbitMqQueue(paymentService *services.PaymentService) *RabbitMqQueue {
@@ -19,7 +34,8 @@ func NewRabbitMqQueue(paymentService *services.PaymentService) *RabbitMqQueue {
 }
 
 func (mq *RabbitMqQueue) InitPaymentConsumer() error {
-	conn, err := amqp.Dial("amqp://admin:admin@localhost:5672/")
+	queueURL := env.GetEnv("QUEUE_URL")
+	conn, err := amqp.Dial(queueURL)
 	if err != nil {
 		return err
 	}
@@ -60,11 +76,29 @@ func (mq *RabbitMqQueue) InitPaymentConsumer() error {
 
 	go func() {
 		for d := range msgs {
-			configs.Logger.Infof(" [x] Received %s", d.Body)
+			var response BodyResponse
+
+			err := json.Unmarshal(d.Body, &response)
+			if err != nil {
+				log.Errorf("Error unmarshalling message: %s", err.Error())
+			}
+
+			err = mq.paymentService.ProcessPaymentExecute(context.Background(), dtos.ProcessPaymentDTO{
+				OrderID:        response.OrderID,
+				UserID:         response.UserID,
+				CardHolder:     response.CardHolder,
+				CardNumber:     response.CardNumber,
+				ExpirationDate: response.ExpirationDate,
+				CVV:            response.CVV,
+				Amount:         response.Amount,
+			})
+			if err != nil {
+				log.Errorf("Error processing payment: %s", err.Error())
+			}
 		}
 	}()
 
-	log.Printf("[*] Waiting for messages. To exit press CTRL+C")
+	log.Info("[*] Waiting for messages...")
 	<-forever
 
 	return nil

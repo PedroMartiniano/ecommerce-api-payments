@@ -21,7 +21,7 @@ func NewPaymentRepository(db *sql.DB) repositories.IPaymentRepository {
 
 func (p PaymentRepository) SavePayment(c context.Context, ent entities.Payments) error {
 	query := `
-		INSERT INTO(id, order_id, customer_id, total_amount, payment_method, payment_date, payment_status, created_at)
+		INSERT INTO payments(id, order_id, customer_id, total_amount, payment_method, payment_date, payment_status, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 	`
 
